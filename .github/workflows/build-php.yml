@@ -1,0 +1,54 @@
+name: Build & Test PHP
+
+on:
+  workflow_call:
+    inputs:
+      php-version:
+        description: PHP version to use
+        type: string
+        default: "8.3"
+      working-directory:
+        description: Working directory for the project
+        type: string
+        default: "."
+      run-tests:
+        description: Whether to run tests
+        type: boolean
+        default: true
+    secrets:
+      VAULT_ADDR:
+        required: false
+      VAULT_TOKEN:
+        required: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ inputs.php-version }}
+          extensions: mbstring, xml, ctype, json, curl, pdo, pdo_mysql
+          coverage: xdebug
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.composer/cache
+          key: composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: composer-
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: Run tests
+        if: ${{ inputs.run-tests }}
+        run: composer test

@@ -1,0 +1,65 @@
+name: Security Scan (Trivy)
+
+on:
+  workflow_call:
+    inputs:
+      image:
+        description: Docker image to scan (full tag including registry)
+        type: string
+        required: false
+      scan-type:
+        description: Scan type - image, fs, or repo
+        type: string
+        default: "fs"
+      severity:
+        description: Severities to fail on (comma-separated)
+        type: string
+        default: "CRITICAL,HIGH"
+      exit-code:
+        description: Exit code when vulnerabilities found (0 = never fail, 1 = fail)
+        type: number
+        default: 1
+    secrets:
+      REGISTRY_USERNAME:
+        required: false
+      REGISTRY_PASSWORD:
+        required: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Trivy filesystem scan
+        if: ${{ inputs.scan-type == 'fs' || inputs.scan-type == 'repo' }}
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: ${{ inputs.scan-type }}
+          scan-ref: "."
+          severity: ${{ inputs.severity }}
+          exit-code: ${{ inputs.exit-code }}
+          format: sarif
+          output: trivy-results.sarif
+
+      - name: Run Trivy image scan
+        if: ${{ inputs.scan-type == 'image' && inputs.image != '' }}
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: image
+          image-ref: ${{ inputs.image }}
+          severity: ${{ inputs.severity }}
+          exit-code: ${{ inputs.exit-code }}
+          format: sarif
+          output: trivy-results.sarif
+        env:
+          TRIVY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
+          TRIVY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+
+      - name: Upload scan results to GitHub Security
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif

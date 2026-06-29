@@ -1,0 +1,53 @@
+name: Build & Test Node.js
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        description: Node.js version to use
+        type: string
+        default: "22"
+      working-directory:
+        description: Working directory for the project
+        type: string
+        default: "."
+      run-tests:
+        description: Whether to run tests
+        type: boolean
+        default: true
+      package-manager:
+        description: Package manager (npm or yarn)
+        type: string
+        default: "npm"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: ${{ inputs.package-manager }}
+
+      - name: Install dependencies (npm)
+        if: ${{ inputs.package-manager == 'npm' }}
+        run: npm ci
+
+      - name: Install dependencies (yarn)
+        if: ${{ inputs.package-manager == 'yarn' }}
+        run: yarn install --frozen-lockfile
+
+      - name: Build
+        run: ${{ inputs.package-manager }} run build --if-present
+
+      - name: Run tests
+        if: ${{ inputs.run-tests }}
+        run: ${{ inputs.package-manager }} test --if-present

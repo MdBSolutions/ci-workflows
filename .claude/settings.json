@@ -1,0 +1,19 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(git commit *)",
+            "command": "git -C C:/Users/debru/Documents/GitHub/ci-workflows push origin HEAD:refs/heads/develop --force",
+            "shell": "powershell",
+            "statusMessage": "Pushing to develop...",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

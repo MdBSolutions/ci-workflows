@@ -1,0 +1,95 @@
+name: Deploy via Platform API
+
+on:
+  workflow_call:
+    inputs:
+      service-name:
+        description: Name of the service to deploy
+        type: string
+        required: true
+      image-tag:
+        description: Docker image tag to deploy
+        type: string
+        required: true
+      environment:
+        description: Target environment (development, staging, production)
+        type: string
+        required: true
+      wait-for-rollout:
+        description: Wait for deployment to complete
+        type: boolean
+        default: true
+    secrets:
+      PLATFORM_API_URL:
+        required: true
+      PLATFORM_API_TOKEN:
+        required: true
+      VAULT_ADDR:
+        required: false
+      VAULT_TOKEN:
+        required: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Trigger deployment
+        id: deploy
+        run: |
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            -X POST "${{ secrets.PLATFORM_API_URL }}/deploy" \
+            -H "Authorization: Bearer ${{ secrets.PLATFORM_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "service": "${{ inputs.service-name }}",
+              "image_tag": "${{ inputs.image-tag }}",
+              "environment": "${{ inputs.environment }}"
+            }')
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | head -n-1)
+
+          echo "HTTP status: $HTTP_CODE"
+          echo "Response: $BODY"
+
+          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+            echo "Deployment request failed with HTTP $HTTP_CODE"
+            exit 1
+          fi
+
+          DEPLOY_ID=$(echo "$BODY" | jq -r '.deploy_id // empty')
+          echo "deploy-id=$DEPLOY_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for rollout
+        if: ${{ inputs.wait-for-rollout && steps.deploy.outputs.deploy-id != '' }}
+        run: |
+          DEPLOY_ID="${{ steps.deploy.outputs.deploy-id }}"
+          MAX_ATTEMPTS=30
+          ATTEMPT=0
+
+          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+            STATUS=$(curl -s \
+              -H "Authorization: Bearer ${{ secrets.PLATFORM_API_TOKEN }}" \
+              "${{ secrets.PLATFORM_API_URL }}/deploy/$DEPLOY_ID/status" \
+              | jq -r '.status // "unknown"')
+
+            echo "Attempt $ATTEMPT: status=$STATUS"
+
+            if [ "$STATUS" = "success" ]; then
+              echo "Deployment succeeded"
+              exit 0
+            fi
+
+            if [ "$STATUS" = "failed" ] || [ "$STATUS" = "error" ]; then
+              echo "Deployment failed with status: $STATUS"
+              exit 1
+            fi
+
+            ATTEMPT=$((ATTEMPT + 1))
+            sleep 10
+          done
+
+          echo "Deployment timed out after $MAX_ATTEMPTS attempts"
+          exit 1

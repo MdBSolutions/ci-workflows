@@ -1,0 +1,46 @@
+name: Release (Semantic Versioning)
+
+on:
+  workflow_call:
+    inputs:
+      dry-run:
+        description: Run without creating a release
+        type: boolean
+        default: false
+      release-branches:
+        description: Branches that trigger a release (JSON array)
+        type: string
+        default: '["main"]'
+    secrets:
+      GH_TOKEN:
+        required: true
+    outputs:
+      version:
+        description: New version number (e.g. 1.2.3)
+        value: ${{ jobs.release.outputs.version }}
+      released:
+        description: Whether a new release was created
+        value: ${{ jobs.release.outputs.released }}
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.semver.outputs.new_release_version }}
+      released: ${{ steps.semver.outputs.new_release_published }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GH_TOKEN }}
+
+      - name: Semantic Release
+        id: semver
+        uses: cycjimmy/semantic-release-action@v4
+        with:
+          dry_run: ${{ inputs.dry-run }}
+          branches: ${{ inputs.release-branches }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
