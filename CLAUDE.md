@@ -32,10 +32,35 @@ Docker-images, deployments en releases.
   build-node.yml         # Build en test Node.js-projecten
   build-db.yml           # Database migrations
   docker-build.yml       # Docker image bouwen en pushen
+  docker-deploy.yml      # Docker build + deploy via platform Ansible
   security-scan.yml      # Trivy security scan
   deploy.yml             # Deployment via Platform API
+  migrate.yml            # Database migraties uitvoeren via db_migrations service
   release.yml            # Semantic versioning + release
 ```
+
+## Standaard gebruik per service type
+
+PHP microservice:
+```yaml
+jobs:
+  pipeline:
+    uses: MdBSolutions/ci-workflows/.github/workflows/pipeline-php.yml@main
+    with:
+      service-name: mijn-service
+      with-migrations: true   # false als geen DB
+```
+
+Node.js / frontend:
+```yaml
+jobs:
+  pipeline:
+    uses: MdBSolutions/ci-workflows/.github/workflows/pipeline-node.yml@main
+    with:
+      service-name: mijn-service
+```
+
+Losse workflows zijn beschikbaar voor afwijkende gevallen (bijv. base-images).
 
 ## Standaard richtlijnen (globaal)
 - Idempotent en declaratief
