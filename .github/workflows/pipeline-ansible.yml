@@ -47,40 +47,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Controleer workspace inhoud
-        run: ls -la ${{ github.workspace }}
-
-      - name: Build runner image
-        run: |
-          docker build -t ${{ inputs.runner-image }} .
-          docker push ${{ inputs.runner-image }}
+      - name: Installeer ansible-lint
+        run: pip3 install ansible-lint --quiet
 
       - name: ansible-lint
-        run: |
-          docker run --rm \
-            -v ${{ github.workspace }}:/ansible \
-            -w /ansible \
-            -e ANSIBLE_HOME=/tmp/ansible_home \
-            --entrypoint sh \
-            ${{ inputs.runner-image }} \
-            -c "ansible-lint ${{ inputs.playbook }}"
+        run: ansible-lint ${{ inputs.playbook }}
+        working-directory: ${{ github.workspace }}
 
       - name: Syntax-check
         if: ${{ inputs.with-syntax-check }}
         run: |
-          docker run --rm \
-            -v ${{ github.workspace }}:/ansible \
-            -w /ansible \
-            -v /etc/vault:/vault:ro \
-            -e VAULT_ADDR=${{ inputs.vault-addr }} \
-            -e ANSIBLE_HOME=/tmp/ansible_home \
-            --entrypoint sh \
-            ${{ inputs.runner-image }} \
-            -c "
-              VAULT_TOKEN=\$(vault write -field=token auth/approle/login \
-                role_id=\$(cat /vault/role_id_github_runner) \
-                secret_id=\$(cat /vault/secret_id_github_runner))
-              export VAULT_TOKEN
-              vault kv get -field=vault_password secret/ci/ansible > /tmp/vault_pass
-              ansible-playbook ${{ inputs.playbook }} --syntax-check --vault-password-file /tmp/vault_pass
-            "
+          VAULT_TOKEN=$(vault write -field=token auth/approle/login \
+            role_id=$(cat /etc/vault/role_id_github_runner) \
+            secret_id=$(cat /etc/vault/secret_id_github_runner))
+          export VAULT_TOKEN
+          vault kv get -field=vault_password secret/ci/ansible > /tmp/vault_pass
+          ansible-playbook ${{ inputs.playbook }} --syntax-check --vault-password-file /tmp/vault_pass
+        working-directory: ${{ github.workspace }}
+        env:
+          VAULT_ADDR: ${{ inputs.vault-addr }}
