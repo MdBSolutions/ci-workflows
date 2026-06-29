@@ -34,10 +34,8 @@ jobs:
     runs-on: ${{ fromJson(inputs.runner) }}
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Fix workspace permissions na checkout
+      - name: Fix workspace permissions
+        if: always()
         run: |
           RUID=$(id -u)
           RGID=$(id -g)
@@ -45,6 +43,9 @@ jobs:
             -v ${{ github.workspace }}:/ansible \
             alpine \
             chown -R ${RUID}:${RGID} /ansible
+
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Controleer workspace inhoud
         run: ls -la ${{ github.workspace }}
