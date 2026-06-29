@@ -1,0 +1,43 @@
+name: Run Database Migrations
+
+on:
+  workflow_call:
+    inputs:
+      database-name:
+        description: "Naam van de database zoals geregistreerd in db_migrations"
+        required: true
+        type: string
+      db-migrations-url:
+        description: "URL van de db_migrations service"
+        required: false
+        type: string
+        default: "http://10.0.0.1:8083"
+
+jobs:
+  migrate:
+    runs-on: [self-hosted, linux, backend1]
+    steps:
+      - name: Run migrations
+        run: |
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            -X POST "${{ inputs.db-migrations-url }}/databases/${{ inputs.database-name }}/migrate" \
+            -H "Content-Type: application/json")
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | head -n-1)
+
+          echo "Response: $BODY"
+
+          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+            echo "Migration failed with HTTP $HTTP_CODE"
+            exit 1
+          fi
+
+          APPLIED=$(echo "$BODY" | jq -r '.applied | length // 0')
+          MESSAGE=$(echo "$BODY" | jq -r '.message // ""')
+
+          if [ -n "$MESSAGE" ]; then
+            echo "$MESSAGE"
+          else
+            echo "Applied $APPLIED migration(s)"
+          fi

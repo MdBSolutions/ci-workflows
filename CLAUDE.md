@@ -32,10 +32,18 @@ Docker-images, deployments en releases.
   build-node.yml         # Build en test Node.js-projecten
   build-db.yml           # Database migrations
   docker-build.yml       # Docker image bouwen en pushen
+  docker-deploy.yml      # Docker build + deploy via platform Ansible
   security-scan.yml      # Trivy security scan
   deploy.yml             # Deployment via Platform API
+  migrate.yml            # Database migraties uitvoeren via db_migrations service
   release.yml            # Semantic versioning + release
 ```
+
+## Standaard pipeline per PHP microservice
+```
+build -> security -> deploy -> migrate
+```
+Elke PHP microservice met een database voegt migrate toe na deploy.
 
 ## Standaard richtlijnen (globaal)
 - Idempotent en declaratief
