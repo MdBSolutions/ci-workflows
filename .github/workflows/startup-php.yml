@@ -1,0 +1,131 @@
+name: Startup PHP Microservice
+
+on:
+  workflow_call:
+    inputs:
+      service-name:
+        description: "Naam van de service"
+        required: true
+        type: string
+      port:
+        description: "Poort waarop de service luistert"
+        required: true
+        type: string
+      with-db:
+        description: "Service heeft een database"
+        required: false
+        type: boolean
+        default: false
+      runner:
+        required: false
+        type: string
+        default: '["self-hosted","linux","backend1"]'
+      registry:
+        required: false
+        type: string
+        default: "10.0.0.1:5000"
+      vault-manager-url:
+        required: false
+        type: string
+        default: "http://10.0.0.1:8082"
+      vault-addr:
+        required: false
+        type: string
+        default: "http://10.0.0.7:8200"
+
+jobs:
+  startup:
+    runs-on: ${{ fromJson(inputs.runner) }}
+    env:
+      SERVICE: ${{ inputs.service-name }}
+      VAULT_MANAGER: ${{ inputs.vault-manager-url }}
+      VAULT_ADDR: ${{ inputs.vault-addr }}
+      REGISTRY: ${{ inputs.registry }}
+      DEPLOY_DIR: /opt/${{ inputs.service-name }}
+
+    steps:
+      - name: Verkrijg Vault token
+        run: |
+          SECRET_ID=$(cat /vault/secret_id)
+          TOKEN=$(curl -sf -X POST "$VAULT_ADDR/v1/auth/approle/login" \
+            -H "Content-Type: application/json" \
+            -d "{\"role_id\":\"$VAULT_ROLE_ID\",\"secret_id\":\"$SECRET_ID\"}" \
+            | jq -r '.auth.client_token')
+          echo "::add-mask::$TOKEN"
+          echo "VAULT_TOKEN=$TOKEN" >> $GITHUB_ENV
+
+      - name: Registreer service in vault_manager
+        run: |
+          STATUS=$(curl -o /dev/null -s -w "%{http_code}" "$VAULT_MANAGER/services/$SERVICE")
+          if [ "$STATUS" = "404" ]; then
+            curl -sf -X POST "$VAULT_MANAGER/services" \
+              -H "Content-Type: application/json" \
+              -d "{\"name\":\"$SERVICE\",\"description\":\"$SERVICE\"}"
+          fi
+
+      - name: Haal DB credentials op
+        if: ${{ inputs.with-db }}
+        run: |
+          CREDS=$(curl -sf "$VAULT_MANAGER/services/$SERVICE/database/credentials")
+          echo "DB_HOST=$(echo $CREDS | jq -r '.data.host')" >> $GITHUB_ENV
+          echo "DB_NAME=$(echo $CREDS | jq -r '.data.db_name')" >> $GITHUB_ENV
+          echo "DB_USER=$(echo $CREDS | jq -r '.data.username')" >> $GITHUB_ENV
+          DB_PASS=$(echo $CREDS | jq -r '.data.password')
+          echo "::add-mask::$DB_PASS"
+          echo "DB_PASS=$DB_PASS" >> $GITHUB_ENV
+
+      - name: Genereer verse secret_id en injecteer in volume
+        run: |
+          VOLUME="vault_auth_$(echo $SERVICE | tr '-' '_')"
+          SECRET_ID=$(curl -sf -X POST "$VAULT_MANAGER/services/$SERVICE/secret-id" \
+            -H "Content-Type: application/json" \
+            -d "{\"cidr_list\":\"\"}" \
+            | jq -r '.data.secret_id')
+          echo "::add-mask::$SECRET_ID"
+          docker volume create $VOLUME 2>/dev/null || true
+          docker run --rm \
+            -v ${VOLUME}:/vault/auth \
+            alpine sh -c "echo -n '$SECRET_ID' > /vault/auth/secret_id && chmod 600 /vault/auth/secret_id"
+
+      - name: Schrijf docker-compose.yml
+        run: |
+          mkdir -p $DEPLOY_DIR
+          CONTAINER=$(echo $SERVICE | tr '_' '-')
+          VOLUME="vault_auth_$(echo $SERVICE | tr '-' '_')"
+          python3 - << PYEOF
+          import yaml, os
+          service = os.environ['SERVICE']
+          container = service.replace('_', '-')
+          volume = f"vault_auth_{service.replace('-', '_')}"
+          env = {'VAULT_ADDR': os.environ['VAULT_ADDR']}
+          if os.environ.get('WITH_DB') == 'true':
+              env.update({
+                  'DB_HOST': os.environ.get('DB_HOST', ''),
+                  'DB_NAME': os.environ.get('DB_NAME', ''),
+                  'DB_USER': os.environ.get('DB_USER', ''),
+                  'DB_PASS': os.environ.get('DB_PASS', ''),
+              })
+          compose = {
+              'services': {
+                  container: {
+                      'image': f"{os.environ['REGISTRY']}/{service}:latest",
+                      'container_name': container,
+                      'restart': 'unless-stopped',
+                      'ports': [f"{os.environ['PORT']}:80"],
+                      'volumes': [f"{volume}:/vault/auth:ro"],
+                      'environment': env,
+                  }
+              },
+              'volumes': {volume: {'external': True}}
+          }
+          with open(os.environ['DEPLOY_DIR'] + '/docker-compose.yml', 'w') as f:
+              yaml.dump(compose, f, default_flow_style=False)
+          PYEOF
+        env:
+          WITH_DB: ${{ inputs.with-db }}
+          PORT: ${{ inputs.port }}
+
+      - name: Pull image en start container
+        run: |
+          docker pull $REGISTRY/$SERVICE:latest
+          docker compose -f $DEPLOY_DIR/docker-compose.yml up -d

@@ -1,0 +1,48 @@
+name: Build & Push Docker image
+
+on:
+  workflow_call:
+    inputs:
+      service-name:
+        description: "Naam van de service (wordt image naam)"
+        required: true
+        type: string
+      runner:
+        description: "Runner als JSON array"
+        required: false
+        type: string
+        default: '["self-hosted","linux","backend1"]'
+      registry:
+        description: "Docker registry adres"
+        required: false
+        type: string
+        default: "10.0.0.1:5000"
+
+jobs:
+  build:
+    runs-on: ${{ fromJson(inputs.runner) }}
+    steps:
+      - name: Fix workspace permissions
+        if: always()
+        run: |
+          RUID=$(id -u)
+          RGID=$(id -g)
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            alpine \
+            chown -R ${RUID}:${RGID} /workspace
+
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            --build-arg REGISTRY_URL=${{ inputs.registry }} \
+            -t ${{ inputs.registry }}/${{ inputs.service-name }}:latest \
+            -t ${{ inputs.registry }}/${{ inputs.service-name }}:${{ github.sha }} \
+            .
+
+      - name: Push naar registry
+        run: |
+          docker push ${{ inputs.registry }}/${{ inputs.service-name }}:latest
+          docker push ${{ inputs.registry }}/${{ inputs.service-name }}:${{ github.sha }}

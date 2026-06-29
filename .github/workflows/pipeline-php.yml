@@ -4,56 +4,46 @@ on:
   workflow_call:
     inputs:
       service-name:
-        description: "Naam van de service (image, deploy-tag en database-naam)"
+        description: "Naam van de service"
         required: true
         type: string
-      deploy-limit:
-        description: "Ansible --limit (hostname)"
-        required: false
+      port:
+        description: "Poort waarop de service luistert"
+        required: true
         type: string
-        default: "backend1"
-      php-version:
-        description: "PHP versie"
-        required: false
-        type: string
-        default: "8.3"
-      run-tests:
-        description: "Tests uitvoeren"
-        required: false
-        type: boolean
-        default: true
-      with-migrations:
-        description: "Database migraties uitvoeren na deploy"
+      with-db:
+        description: "Service heeft een database"
         required: false
         type: boolean
         default: false
+      php-version:
+        required: false
+        type: string
+        default: "8.3"
+      runner:
+        required: false
+        type: string
+        default: '["self-hosted","linux","backend1"]'
 
 jobs:
-  build:
-    uses: MdBSolutions/ci-workflows/.github/workflows/build-php.yml@main
+  test:
+    uses: MdBSolutions/ci-workflows/.github/workflows/test-php.yml@main
     with:
       php-version: ${{ inputs.php-version }}
-      run-tests: ${{ inputs.run-tests }}
 
-  security:
+  build:
+    needs: test
+    uses: MdBSolutions/ci-workflows/.github/workflows/build.yml@main
+    with:
+      service-name: ${{ inputs.service-name }}
+      runner: ${{ inputs.runner }}
+
+  startup:
     needs: build
-    uses: MdBSolutions/ci-workflows/.github/workflows/security-scan.yml@main
-    with:
-      scan-type: fs
-      severity: CRITICAL,HIGH
-
-  deploy:
-    needs: [build, security]
     if: github.ref == 'refs/heads/main'
-    uses: MdBSolutions/ci-workflows/.github/workflows/docker-deploy.yml@main
+    uses: MdBSolutions/ci-workflows/.github/workflows/startup-php.yml@main
     with:
-      image-name: ${{ inputs.service-name }}
-      deploy-tag: ${{ inputs.service-name }}
-      deploy-limit: ${{ inputs.deploy-limit }}
-
-  migrate:
-    needs: deploy
-    if: github.ref == 'refs/heads/main' && inputs.with-migrations
-    uses: MdBSolutions/ci-workflows/.github/workflows/migrate.yml@main
-    with:
-      database-name: ${{ inputs.service-name }}
+      service-name: ${{ inputs.service-name }}
+      port: ${{ inputs.port }}
+      with-db: ${{ inputs.with-db }}
+      runner: ${{ inputs.runner }}

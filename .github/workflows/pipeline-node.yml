@@ -4,56 +4,40 @@ on:
   workflow_call:
     inputs:
       service-name:
-        description: "Naam van de service (image en deploy-tag)"
+        description: "Naam van de service"
         required: true
         type: string
-      deploy-limit:
-        description: "Ansible --limit (hostname)"
-        required: false
+      port:
+        description: "Poort waarop de service luistert"
+        required: true
         type: string
-        default: "backend1"
       node-version:
-        description: "Node.js versie"
         required: false
         type: string
         default: "22"
-      run-tests:
-        description: "Tests uitvoeren"
+      runner:
         required: false
-        type: boolean
-        default: true
-      with-migrations:
-        description: "Database migraties uitvoeren na deploy"
-        required: false
-        type: boolean
-        default: false
+        type: string
+        default: '["self-hosted","linux","backend1"]'
 
 jobs:
-  build:
-    uses: MdBSolutions/ci-workflows/.github/workflows/build-node.yml@main
+  test:
+    uses: MdBSolutions/ci-workflows/.github/workflows/test-node.yml@main
     with:
       node-version: ${{ inputs.node-version }}
-      run-tests: ${{ inputs.run-tests }}
 
-  security:
+  build:
+    needs: test
+    uses: MdBSolutions/ci-workflows/.github/workflows/build.yml@main
+    with:
+      service-name: ${{ inputs.service-name }}
+      runner: ${{ inputs.runner }}
+
+  startup:
     needs: build
-    uses: MdBSolutions/ci-workflows/.github/workflows/security-scan.yml@main
-    with:
-      scan-type: fs
-      severity: CRITICAL,HIGH
-
-  deploy:
-    needs: [build, security]
     if: github.ref == 'refs/heads/main'
-    uses: MdBSolutions/ci-workflows/.github/workflows/docker-deploy.yml@main
+    uses: MdBSolutions/ci-workflows/.github/workflows/startup-node.yml@main
     with:
-      image-name: ${{ inputs.service-name }}
-      deploy-tag: ${{ inputs.service-name }}
-      deploy-limit: ${{ inputs.deploy-limit }}
-
-  migrate:
-    needs: deploy
-    if: github.ref == 'refs/heads/main' && inputs.with-migrations
-    uses: MdBSolutions/ci-workflows/.github/workflows/migrate.yml@main
-    with:
-      database-name: ${{ inputs.service-name }}
+      service-name: ${{ inputs.service-name }}
+      port: ${{ inputs.port }}
+      runner: ${{ inputs.runner }}

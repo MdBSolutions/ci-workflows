@@ -1,0 +1,109 @@
+name: Startup Node.js / Frontend
+
+on:
+  workflow_call:
+    inputs:
+      service-name:
+        description: "Naam van de service"
+        required: true
+        type: string
+      port:
+        description: "Poort waarop de service luistert"
+        required: true
+        type: string
+      with-ssl:
+        description: "SSL certificaat ophalen uit Vault"
+        required: false
+        type: boolean
+        default: false
+      ssl-vault-path:
+        description: "Vault pad voor SSL cert (bijv. platform/ssl/gekochtonline)"
+        required: false
+        type: string
+        default: ""
+      runner:
+        required: false
+        type: string
+        default: '["self-hosted","linux","frontend1"]'
+      registry:
+        required: false
+        type: string
+        default: "10.0.0.1:5000"
+      vault-manager-url:
+        required: false
+        type: string
+        default: "http://10.0.0.1:8082"
+      vault-addr:
+        required: false
+        type: string
+        default: "http://10.0.0.7:8200"
+
+jobs:
+  startup:
+    runs-on: ${{ fromJson(inputs.runner) }}
+    env:
+      SERVICE: ${{ inputs.service-name }}
+      VAULT_MANAGER: ${{ inputs.vault-manager-url }}
+      VAULT_ADDR: ${{ inputs.vault-addr }}
+      REGISTRY: ${{ inputs.registry }}
+      DEPLOY_DIR: /opt/${{ inputs.service-name }}
+
+    steps:
+      - name: Verkrijg Vault token
+        run: |
+          SECRET_ID=$(cat /vault/secret_id)
+          TOKEN=$(curl -sf -X POST "$VAULT_ADDR/v1/auth/approle/login" \
+            -H "Content-Type: application/json" \
+            -d "{\"role_id\":\"$VAULT_ROLE_ID\",\"secret_id\":\"$SECRET_ID\"}" \
+            | jq -r '.auth.client_token')
+          echo "::add-mask::$TOKEN"
+          echo "VAULT_TOKEN=$TOKEN" >> $GITHUB_ENV
+
+      - name: Haal SSL certificaat op uit Vault
+        if: ${{ inputs.with-ssl }}
+        run: |
+          mkdir -p $DEPLOY_DIR/ssl
+          CERT=$(curl -sf -H "X-Vault-Token: $VAULT_TOKEN" \
+            "$VAULT_ADDR/v1/secret/data/${{ inputs.ssl-vault-path }}" \
+            | jq -r '.data.data.certificate')
+          KEY=$(curl -sf -H "X-Vault-Token: $VAULT_TOKEN" \
+            "$VAULT_ADDR/v1/secret/data/${{ inputs.ssl-vault-path }}" \
+            | jq -r '.data.data.private_key')
+          echo "$CERT" > $DEPLOY_DIR/ssl/cert.pem
+          echo "$KEY" > $DEPLOY_DIR/ssl/key.pem
+          chmod 600 $DEPLOY_DIR/ssl/key.pem
+
+      - name: Schrijf docker-compose.yml
+        run: |
+          mkdir -p $DEPLOY_DIR
+          CONTAINER=$(echo $SERVICE | tr '_' '-')
+          python3 - << PYEOF
+          import yaml, os
+          service = os.environ['SERVICE']
+          container = service.replace('_', '-')
+          volumes = []
+          if os.environ.get('WITH_SSL') == 'true':
+              volumes.append(f"{os.environ['DEPLOY_DIR']}/ssl:/etc/ssl/certs/app:ro")
+          compose = {
+              'services': {
+                  container: {
+                      'image': f"{os.environ['REGISTRY']}/{service}:latest",
+                      'container_name': container,
+                      'restart': 'unless-stopped',
+                      'ports': [f"{os.environ['PORT']}:80"],
+                  }
+              }
+          }
+          if volumes:
+              compose['services'][container]['volumes'] = volumes
+          with open(os.environ['DEPLOY_DIR'] + '/docker-compose.yml', 'w') as f:
+              yaml.dump(compose, f, default_flow_style=False)
+          PYEOF
+        env:
+          WITH_SSL: ${{ inputs.with-ssl }}
+          PORT: ${{ inputs.port }}
+
+      - name: Pull image en start container
+        run: |
+          docker pull $REGISTRY/$SERVICE:latest
+          docker compose -f $DEPLOY_DIR/docker-compose.yml up -d
