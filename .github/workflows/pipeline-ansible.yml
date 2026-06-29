@@ -34,8 +34,10 @@ jobs:
     runs-on: ${{ fromJson(inputs.runner) }}
 
     steps:
-      - name: Fix workspace permissions
-        if: always()
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fix workspace permissions na checkout
         run: |
           RUID=$(id -u)
           RGID=$(id -g)
@@ -44,8 +46,8 @@ jobs:
             alpine \
             chown -R ${RUID}:${RGID} /ansible
 
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Controleer workspace inhoud
+        run: ls -la ${{ github.workspace }}
 
       - name: Build runner image
         run: |
@@ -56,16 +58,18 @@ jobs:
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/ansible \
+            -w /ansible \
             -e ANSIBLE_HOME=/tmp/ansible_home \
             --entrypoint sh \
             ${{ inputs.runner-image }} \
-            -c "cd /ansible && ansible-lint ${{ inputs.playbook }}"
+            -c "ansible-lint ${{ inputs.playbook }}"
 
       - name: Syntax-check
         if: ${{ inputs.with-syntax-check }}
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/ansible \
+            -w /ansible \
             -v /etc/vault:/vault:ro \
             -e VAULT_ADDR=${{ inputs.vault-addr }} \
             -e ANSIBLE_HOME=/tmp/ansible_home \
