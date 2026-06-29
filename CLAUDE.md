@@ -60,6 +60,15 @@ jobs:
       service-name: mijn-service
 ```
 
+Ansible repo (bijv. platform):
+```yaml
+jobs:
+  test:
+    uses: MdBSolutions/ci-workflows/.github/workflows/pipeline-ansible.yml@main
+    with:
+      playbook: deploy.yml
+```
+
 Losse workflows zijn beschikbaar voor afwijkende gevallen (bijv. base-images).
 
 ## Standaard richtlijnen (globaal)

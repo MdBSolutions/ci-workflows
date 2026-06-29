@@ -1,0 +1,81 @@
+name: Ansible Pipeline
+
+on:
+  workflow_call:
+    inputs:
+      playbook:
+        description: "Ansible playbook bestand"
+        required: false
+        type: string
+        default: "deploy.yml"
+      runner:
+        description: "GitHub Actions runner label"
+        required: false
+        type: string
+        default: "self-hosted,linux,backend1"
+      runner-image:
+        description: "Docker image voor ansible-lint en syntax-check"
+        required: false
+        type: string
+        default: "10.0.0.1:5000/platform-runner:latest"
+      vault-addr:
+        description: "Vault adres voor syntax-check"
+        required: false
+        type: string
+        default: "http://10.0.0.7:8200"
+      with-syntax-check:
+        description: "Syntax-check uitvoeren (vereist Vault toegang)"
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  lint:
+    runs-on: ${{ fromJson(format('["{0}"]', replace(inputs.runner, ',', '","'))) }}
+
+    steps:
+      - name: Fix workspace permissions
+        if: always()
+        run: |
+          RUID=$(id -u)
+          RGID=$(id -g)
+          docker run --rm \
+            -v ${{ github.workspace }}:/ansible \
+            alpine \
+            chown -R ${RUID}:${RGID} /ansible
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build runner image
+        run: |
+          docker build -t ${{ inputs.runner-image }} .
+          docker push ${{ inputs.runner-image }}
+
+      - name: ansible-lint
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/ansible \
+            -e ANSIBLE_HOME=/tmp/ansible_home \
+            --entrypoint sh \
+            ${{ inputs.runner-image }} \
+            -c "cd /ansible && ansible-lint ${{ inputs.playbook }}"
+
+      - name: Syntax-check
+        if: ${{ inputs.with-syntax-check }}
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/ansible \
+            -v /etc/vault:/vault:ro \
+            -e VAULT_ADDR=${{ inputs.vault-addr }} \
+            -e ANSIBLE_HOME=/tmp/ansible_home \
+            --entrypoint sh \
+            ${{ inputs.runner-image }} \
+            -c "
+              VAULT_TOKEN=\$(vault write -field=token auth/approle/login \
+                role_id=\$(cat /vault/role_id_github_runner) \
+                secret_id=\$(cat /vault/secret_id_github_runner))
+              export VAULT_TOKEN
+              vault kv get -field=vault_password secret/ci/ansible > /tmp/vault_pass
+              ansible-playbook ${{ inputs.playbook }} --syntax-check --vault-password-file /tmp/vault_pass
+            "
