@@ -23,6 +23,10 @@ on:
         description: Whether to push the image
         type: boolean
         default: true
+      push-latest:
+        description: Also push with :latest tag
+        type: boolean
+        default: false
       platforms:
         description: Target platforms (comma-separated)
         type: string
@@ -64,6 +68,15 @@ jobs:
           username: ${{ secrets.REGISTRY_USERNAME }}
           password: ${{ secrets.REGISTRY_PASSWORD }}
 
+      - name: Compute tags
+        id: tags
+        run: |
+          TAGS="${{ secrets.REGISTRY_URL }}/${{ inputs.image-name }}:${{ inputs.tag }}"
+          if [ "${{ inputs.push-latest }}" = "true" ]; then
+            TAGS="${TAGS},${{ secrets.REGISTRY_URL }}/${{ inputs.image-name }}:latest"
+          fi
+          echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
+
       - name: Build and push
         id: build
         uses: docker/build-push-action@v5
@@ -72,6 +85,6 @@ jobs:
           file: ${{ inputs.dockerfile }}
           platforms: ${{ inputs.platforms }}
           push: ${{ inputs.push }}
-          tags: ${{ secrets.REGISTRY_URL }}/${{ inputs.image-name }}:${{ inputs.tag }}
+          tags: ${{ steps.tags.outputs.tags }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

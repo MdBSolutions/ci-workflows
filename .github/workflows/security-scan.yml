@@ -11,6 +11,10 @@ on:
         description: Scan type - image, fs, or repo
         type: string
         default: "fs"
+      scan-ref:
+        description: Path to scan for fs/repo scan types
+        type: string
+        default: "."
       severity:
         description: Severities to fail on (comma-separated)
         type: string
@@ -38,7 +42,7 @@ jobs:
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: ${{ inputs.scan-type }}
-          scan-ref: "."
+          scan-ref: ${{ inputs.scan-ref }}
           severity: ${{ inputs.severity }}
           exit-code: ${{ inputs.exit-code }}
           format: sarif
