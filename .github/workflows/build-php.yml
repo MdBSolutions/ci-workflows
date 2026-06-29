@@ -51,4 +51,9 @@ jobs:
 
       - name: Run tests
         if: ${{ inputs.run-tests }}
-        run: composer test
+        run: |
+          if [ -f "phpunit.xml" ]; then
+            composer test
+          else
+            echo "Geen phpunit.xml gevonden, tests overgeslagen"
+          fi
