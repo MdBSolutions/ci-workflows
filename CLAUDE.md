@@ -39,11 +39,28 @@ Docker-images, deployments en releases.
   release.yml            # Semantic versioning + release
 ```
 
-## Standaard pipeline per PHP microservice
+## Standaard gebruik per service type
+
+PHP microservice:
+```yaml
+jobs:
+  pipeline:
+    uses: MdBSolutions/ci-workflows/.github/workflows/pipeline-php.yml@main
+    with:
+      service-name: mijn-service
+      with-migrations: true   # false als geen DB
 ```
-build -> security -> deploy -> migrate
+
+Node.js / frontend:
+```yaml
+jobs:
+  pipeline:
+    uses: MdBSolutions/ci-workflows/.github/workflows/pipeline-node.yml@main
+    with:
+      service-name: mijn-service
 ```
-Elke PHP microservice met een database voegt migrate toe na deploy.
+
+Losse workflows zijn beschikbaar voor afwijkende gevallen (bijv. base-images).
 
 ## Standaard richtlijnen (globaal)
 - Idempotent en declaratief

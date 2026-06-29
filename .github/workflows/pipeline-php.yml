@@ -1,0 +1,59 @@
+name: PHP Pipeline
+
+on:
+  workflow_call:
+    inputs:
+      service-name:
+        description: "Naam van de service (image, deploy-tag en database-naam)"
+        required: true
+        type: string
+      deploy-limit:
+        description: "Ansible --limit (hostname)"
+        required: false
+        type: string
+        default: "backend1"
+      php-version:
+        description: "PHP versie"
+        required: false
+        type: string
+        default: "8.3"
+      run-tests:
+        description: "Tests uitvoeren"
+        required: false
+        type: boolean
+        default: true
+      with-migrations:
+        description: "Database migraties uitvoeren na deploy"
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    uses: MdBSolutions/ci-workflows/.github/workflows/build-php.yml@main
+    with:
+      php-version: ${{ inputs.php-version }}
+      run-tests: ${{ inputs.run-tests }}
+
+  security:
+    needs: build
+    uses: MdBSolutions/ci-workflows/.github/workflows/security-scan.yml@main
+    with:
+      scan-type: fs
+      severity: CRITICAL,HIGH
+
+  deploy:
+    needs: [build, security]
+    if: github.ref == 'refs/heads/main'
+    uses: MdBSolutions/ci-workflows/.github/workflows/docker-deploy.yml@main
+    with:
+      image-name: ${{ inputs.service-name }}
+      deploy-tag: ${{ inputs.service-name }}
+      deploy-limit: ${{ inputs.deploy-limit }}
+
+  migrate:
+    needs: deploy
+    if: github.ref == 'refs/heads/main' && inputs.with-migrations
+    uses: MdBSolutions/ci-workflows/.github/workflows/migrate.yml@main
+    with:
+      database-name: ${{ inputs.service-name }}
