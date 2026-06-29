@@ -28,6 +28,11 @@ on:
         type: boolean
         default: false
 
+permissions:
+  security-events: write
+  actions: read
+  contents: read
+
 jobs:
   build:
     uses: MdBSolutions/ci-workflows/.github/workflows/build-node.yml@main
