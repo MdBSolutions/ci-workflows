@@ -1,0 +1,60 @@
+name: Build & Push Base Image
+
+on:
+  workflow_call:
+    inputs:
+      image-name:
+        description: "Naam van de image (bijv. php-fpm)"
+        required: true
+        type: string
+      version:
+        description: "Versie tag (bijv. 8.3)"
+        required: true
+        type: string
+      dockerfile:
+        description: "Pad naar Dockerfile"
+        required: false
+        type: string
+        default: "Dockerfile"
+      context:
+        description: "Docker build context"
+        required: false
+        type: string
+        default: "."
+      runner:
+        required: false
+        type: string
+        default: '["self-hosted","linux","backend1"]'
+      registry:
+        required: false
+        type: string
+        default: "10.0.0.1:5000"
+
+jobs:
+  build:
+    runs-on: ${{ fromJson(inputs.runner) }}
+    steps:
+      - name: Fix workspace permissions
+        if: always()
+        run: |
+          RUID=$(id -u)
+          RGID=$(id -g)
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            alpine \
+            chown -R ${RUID}:${RGID} /workspace
+
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: |
+          docker build \
+            -t ${{ inputs.registry }}/${{ inputs.image-name }}:${{ inputs.version }} \
+            -t ${{ inputs.registry }}/${{ inputs.image-name }}:latest \
+            -f ${{ inputs.dockerfile }} \
+            ${{ inputs.context }}
+
+      - name: Push naar registry
+        run: |
+          docker push ${{ inputs.registry }}/${{ inputs.image-name }}:${{ inputs.version }}
+          docker push ${{ inputs.registry }}/${{ inputs.image-name }}:latest
