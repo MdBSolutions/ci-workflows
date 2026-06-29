@@ -37,6 +37,7 @@ jobs:
       - name: Build Docker image
         run: |
           docker build \
+            --build-arg REGISTRY_URL=${{ inputs.registry }} \
             -t ${{ inputs.registry }}/${{ inputs.service-name }}:latest \
             -t ${{ inputs.registry }}/${{ inputs.service-name }}:${{ github.sha }} \
             .
