@@ -1,0 +1,43 @@
+name: Test PHP
+
+on:
+  workflow_call:
+    inputs:
+      php-version:
+        type: string
+        default: "8.3"
+      working-directory:
+        type: string
+        default: "."
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ inputs.php-version }}
+          extensions: mbstring, xml, ctype, json, curl, pdo, pdo_mysql
+          coverage: xdebug
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.composer/cache
+          key: composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: composer-
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: Run tests
+        run: |
+          if [ -f "phpunit.xml" ]; then
+            composer test
+          else
+            echo "Geen phpunit.xml gevonden, tests overgeslagen"
+          fi
