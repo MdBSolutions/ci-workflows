@@ -1,0 +1,59 @@
+name: Ansible Deploy
+
+on:
+  workflow_call:
+    inputs:
+      playbook:
+        description: "Ansible playbook bestand"
+        required: false
+        type: string
+        default: "deploy.yml"
+      runner:
+        description: "Runner als JSON array"
+        required: false
+        type: string
+        default: '["self-hosted","linux","backend1"]'
+      runner-image:
+        description: "Platform runner Docker image"
+        required: false
+        type: string
+        default: "10.0.0.1:5000/platform-runner:latest"
+      vault-addr:
+        description: "Vault adres"
+        required: false
+        type: string
+        default: "http://10.0.0.7:8200"
+      tags:
+        description: "Ansible tags om te beperken welke roles draaien (kommagescheiden)"
+        required: false
+        type: string
+        default: ""
+
+jobs:
+  deploy:
+    runs-on: ${{ fromJson(inputs.runner) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Bouw deploy image met playbook erin
+        run: |
+          docker build -t platform-runner:deploy \
+            --build-arg BASE=${{ inputs.runner-image }} \
+            -f- . <<'DOCKERFILE'
+          ARG BASE
+          FROM ${BASE}
+          COPY . /ansible/
+          DOCKERFILE
+
+      - name: Run Ansible playbook
+        run: |
+          TAGS_ARG=""
+          if [ -n "${{ inputs.tags }}" ]; then
+            TAGS_ARG="-e DEPLOY_TAGS=${{ inputs.tags }}"
+          fi
+          docker run --rm \
+            -v /etc/vault:/vault:ro \
+            -e VAULT_ADDR=${{ inputs.vault-addr }} \
+            $TAGS_ARG \
+            platform-runner:deploy
