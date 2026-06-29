@@ -48,7 +48,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Installeer ansible-lint
-        run: pip3 install --force-reinstall 'ansible-lint<6' --quiet
+        run: python3 -m pip install --force-reinstall 'ansible-lint<6' --quiet
 
       - name: ansible-lint
         run: ansible-lint ${{ inputs.playbook }}
