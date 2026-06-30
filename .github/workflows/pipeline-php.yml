@@ -16,6 +16,11 @@ on:
         required: false
         type: boolean
         default: false
+      skip-startup:
+        description: "Sla startup stap over (voor services die zichzelf beheren, bijv. vault_manager)"
+        required: false
+        type: boolean
+        default: false
       php-version:
         required: false
         type: string
@@ -40,7 +45,7 @@ jobs:
 
   startup:
     needs: build
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && !inputs.skip-startup
     uses: MdBSolutions/ci-workflows/.github/workflows/startup-php.yml@main
     with:
       service-name: ${{ inputs.service-name }}

@@ -61,6 +61,9 @@ jobs:
             curl -sf -X POST "$VAULT_MANAGER/services" \
               -H "Content-Type: application/json" \
               -d "{\"name\":\"$SERVICE\",\"description\":\"$SERVICE\"}"
+          elif [ "$STATUS" != "200" ]; then
+            echo "ERROR: vault_manager returned HTTP $STATUS for GET /services/$SERVICE"
+            exit 1
           fi
 
       - name: Haal DB credentials op
