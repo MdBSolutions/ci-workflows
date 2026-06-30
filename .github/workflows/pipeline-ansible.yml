@@ -50,10 +50,11 @@ jobs:
       - name: ansible-lint
         run: |
           docker run --rm \
+            --entrypoint ansible-lint \
             -v ${{ github.workspace }}:/ansible \
             -w /ansible \
             ${{ inputs.runner-image }} \
-            ansible-lint ${{ inputs.playbook }}
+            ${{ inputs.playbook }}
 
       - name: Syntax-check
         if: ${{ inputs.with-syntax-check }}
