@@ -13,11 +13,6 @@ on:
         required: false
         type: string
         default: '["self-hosted","linux","backend1"]'
-      runner-image:
-        description: "Platform runner Docker image"
-        required: false
-        type: string
-        default: "10.0.0.1:5000/platform-runner:latest"
       vault-addr:
         description: "Vault adres"
         required: false
@@ -32,28 +27,35 @@ on:
 jobs:
   deploy:
     runs-on: ${{ fromJson(inputs.runner) }}
+    env:
+      VAULT_ADDR: ${{ inputs.vault-addr }}
     steps:
+      - name: Fix workspace permissions
+        if: always()
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/ansible \
+            alpine chown -R $(id -u):$(id -g) /ansible
+
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Bouw deploy image met playbook erin
+      - name: Verkrijg Vault token
         run: |
-          docker build -t platform-runner:deploy \
-            --build-arg BASE=${{ inputs.runner-image }} \
-            -f- . <<'DOCKERFILE'
-          ARG BASE
-          FROM ${BASE}
-          COPY . /ansible/
-          DOCKERFILE
+          SECRET_ID=$(cat /vault/secret_id)
+          TOKEN=$(curl -sf --max-time 10 \
+            -X POST "$VAULT_ADDR/v1/auth/approle/login" \
+            -H "Content-Type: application/json" \
+            -d "{\"role_id\":\"$VAULT_ROLE_ID\",\"secret_id\":\"$SECRET_ID\"}" \
+            | jq -r '.auth.client_token')
+          echo "::add-mask::$TOKEN"
+          echo "VAULT_TOKEN=$TOKEN" >> $GITHUB_ENV
 
       - name: Run Ansible playbook
         run: |
           TAGS_ARG=""
           if [ -n "${{ inputs.tags }}" ]; then
-            TAGS_ARG="-e DEPLOY_TAGS=${{ inputs.tags }}"
+            TAGS_ARG="--tags ${{ inputs.tags }}"
           fi
-          docker run --rm \
-            -v /etc/vault:/vault:ro \
-            -e VAULT_ADDR=${{ inputs.vault-addr }} \
-            $TAGS_ARG \
-            platform-runner:deploy
+          ansible-playbook ${{ inputs.playbook }} $TAGS_ARG
+        working-directory: ${{ github.workspace }}
